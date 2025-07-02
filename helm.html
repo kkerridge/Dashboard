@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Helm Dashboard</title>
+  <style>
+    :root.light {
+      --bg: #f4f4f4;
+      --fg: #000000;
+      --highlight: #004488;
+      --gps: #004400;
+      --update: #333;
+      --trail: rgba(0, 100, 0, 0.4);
+    }
+    :root.dark {
+      --bg: #001d33;
+      --fg: #00d4ff;
+      --highlight: #00ffff;
+      --gps: #b3ffb3;
+      --update: #88ccff;
+      --trail: rgba(0, 255, 0, 0.2);
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h1 { margin: 10px 0; color: var(--highlight); }
+    .status, .theme-toggle, .gps {
+      position: absolute;
+      font-size: 0.9em;
+    }
+    .status { top: 10px; right: 10px; color: #ccc; }
+    .theme-toggle {
+      top: 30px; right: 10px;
+      cursor: pointer;
+      border: 1px solid var(--fg);
+      color: var(--fg);
+      background: none;
+      padding: 4px 8px;
+    }
+    .gps {
+      top: 60px; right: 10px;
+      color: var(--gps);
+      text-align: right;
+      z-index: 10;
+    }
+    .back-link {
+      position: absolute;
+      top: 10px; left: 10px;
+      text-decoration: none;
+      font-size: 0.9em;
+      color: var(--fg);
+    }
+    .wind {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 100px;
+    }
+    #combinedWind, #gustStats, #lastUpdate {
+      margin-top: 4px;
+    }
+    #windSpeedDisplay {
+      font-size: 3em;
+      font-family: 'Courier New', Courier, monospace;
+      background: #222;
+      color: #00ffcc;
+      padding: 10px 20px;
+      border-radius: 6px;
+      margin: 10px 0;
+    }
+    #windHistory {
+      width: 300px; height: 150px;
+      margin: 10px 0;
+    }
+    .graphic-container {
+      position: relative;
+      width: 300px; height: 400px;
+    }
+    #boatImage {
+      position: absolute; top: 0; left: 0;
+      width: 300px;
+      z-index: 1;
+    }
+    #arrow, #avgArrow, #arrowTrail {
+      position: absolute;
+      top: 60px; left: 80px;
+      width: 140px; height: 140px;
+      transform-origin: center;
+    }
+    #arrowTrail { z-index: 1; }
+    #avgArrow { z-index: 2; opacity: 0.5; }
+    #arrow { z-index: 3; }
+    .motor-temp {
+      position: absolute;
+      bottom: -80px;
+      font-size: 0.8em;
+      font-weight: bold;
+      color: var(--highlight);
+      width: 80px;
+      text-align: center;
+      line-height: 1.2;
+      z-index: 5;
+    }
+    #motorTempLeft { left: 10px; }
+    #motorTempRight { right: 10px; }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="index.html">← Back to Dashboard</a>
+  <div class="status" id="status">WebSocket: Connecting...</div>
+  <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+  <div class="gps">
+    <div id="gpsLat">Latitude: --</div>
+    <div id="gpsLon">Longitude: --</div>
+  </div>
+  <div class="wind">
+    <h1>Wind</h1>
+    <div id="combinedWind">-- ° / -- kt</div>
+    <div id="gustStats">Gust: -- kt | Avg (10s): -- kt</div>
+    <div id="windSpeedDisplay">-- KTS</div>
+    <div id="lastUpdate">Last update: --</div>
+    <canvas id="windHistory"></canvas>
+    <div class="graphic-container">
+      <img id="boatImage" src="htbbk.png" />
+      <svg id="arrowTrail" viewBox="0 0 100 100"></svg>
+      <svg id="arrow" viewBox="0 0 100 100">
+        <line x1="50" y1="10" x2="50" y2="90" stroke="#ff5050" stroke-width="8" stroke-linecap="round"/>
+        <polygon points="50,0 40,20 60,20" fill="#ff5050"/>
+      </svg>
+      <svg id="avgArrow" viewBox="0 0 100 100">
+        <line x1="50" y1="10" x2="50" y2="90" stroke="#88ccff" stroke-width="8" stroke-linecap="round"/>
+        <polygon points="50,0 40,20 60,20" fill="#88ccff"/>
+      </svg>
+      <div id="motorTempLeft" class="motor-temp">
+        <div style="font-size: 0.6em;">Motor</div>
+        <div>Temp</div>
+        <div id="motorTempLeftValue">-- °C</div>
+      </div>
+      <div id="motorTempRight" class="motor-temp">
+        <div style="font-size: 0.6em;">Motor</div>
+        <div>Temp</div>
+        <div id="motorTempRightValue">-- °C</div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    let ws;
+    let windDir = 0;
+    let lastWindDir = 0;
+    let windSpeed = "--";
+    let windAngles = [];
+    let windSpeeds = [];
+    const MAX_HISTORY = 20;
+    const status = document.getElementById("status");
+    const gpsLatEl = document.getElementById("gpsLat");
+    const gpsLonEl = document.getElementById("gpsLon");
+    const arrow = document.getElementById("arrow");
+    const avgArrow = document.getElementById("avgArrow");
+    const trail = document.getElementById("arrowTrail");
+    const windSpeedDisplay = document.getElementById("windSpeedDisplay");
+    const motorTempLeftValue = document.getElementById("motorTempLeftValue");
+    const motorTempRightValue = document.getElementById("motorTempRightValue");
+    const combinedWind = document.getElementById("combinedWind");
+    const gustStats = document.getElementById("gustStats");
+    const lastUpdate = document.getElementById("lastUpdate");
+    const boatImage = document.getElementById("boatImage");
+    const ctx = document.getElementById("windHistory").getContext("2d");
+    const windChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{
+          label: "Wind Speed (kt)",
+          data: [],
+          borderColor: "#00d4ff",
+          backgroundColor: "rgba(0, 212, 255, 0.2)",
+          fill: true,
+          tension: 0.2
+        }]
+      },
+      options: {
+        scales: {
+          x: { display: false },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+    function updateChart(speed) {
+      const now = new Date().toLocaleTimeString();
+      windChart.data.labels.push(now);
+      windChart.data.datasets[0].data.push(speed);
+      if (windChart.data.labels.length > MAX_HISTORY) {
+        windChart.data.labels.shift();
+        windChart.data.datasets[0].data.shift();
+      }
+      windChart.update();
+    }
+    function rotateSmoothly(current, target) {
+      let delta = target - current;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      return current + delta;
+    }
+    function getAverageWindDir() {
+      if (windAngles.length === 0) return 0;
+      const sinSum = windAngles.reduce((sum, deg) => sum + Math.sin(deg * Math.PI / 180), 0);
+      const cosSum = windAngles.reduce((sum, deg) => sum + Math.cos(deg * Math.PI / 180), 0);
+      const avgRad = Math.atan2(sinSum / windAngles.length, cosSum / windAngles.length);
+      return Math.round((avgRad * 180 / Math.PI + 360) % 360);
+    }
+    function drawTrail() {
+      trail.innerHTML = "";
+      windAngles.forEach((deg, i) => {
+        const opacity = (i + 1) / windAngles.length;
+        const el = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        el.setAttribute("x1", "50");
+        el.setAttribute("y1", "20");
+        el.setAttribute("x2", "50");
+        el.setAttribute("y2", "80");
+        el.setAttribute("stroke", "green");
+        el.setAttribute("stroke-width", 2);
+        el.setAttribute("stroke-opacity", opacity);
+        el.setAttribute("transform", `rotate(${deg} 50 50)`);
+        trail.appendChild(el);
+      });
+    }
+    function updateWindDisplay() {
+      combinedWind.textContent = `${windDir} ° / ${windSpeed} kt`;
+      windSpeedDisplay.textContent = `${windSpeed} KTS`;
+      const avg = getAverageWindDir();
+      avgArrow.style.transform = `rotate(${avg}deg)`;
+      gustStats.textContent = `Gust: ${Math.max(...windSpeeds).toFixed(1)} kt | Avg (10s): ${(windSpeeds.reduce((a,b)=>a+b,0)/windSpeeds.length).toFixed(1)} kt`;
+      lastUpdate.textContent = "Last update: " + new Date().toLocaleTimeString();
+      drawTrail();
+    }
+    function connectWebSocket() {
+      let wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
+      ws = new WebSocket(wsProtocol + "boatlifesystems.co.uk:3003");
+      ws.onopen = () => {
+        status.textContent = "WebSocket: Connected";
+        ws.send(JSON.stringify({ type: "setName", username: "Hal-helm" }));
+      };
+      ws.onclose = () => {
+        status.textContent = "WebSocket: Disconnected. Reconnecting...";
+        setTimeout(connectWebSocket, 3000);
+      };
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "chat" && msg.text.startsWith("hal:")) {
+            const [_, key, value] = msg.text.trim().split(/\s+/);
+            if (key === "windDir") {
+              const newDir = parseInt(value);
+              windDir = Math.round(rotateSmoothly(lastWindDir, newDir));
+              arrow.style.transform = `rotate(${windDir}deg)`;
+              lastWindDir = windDir;
+              windAngles.push(newDir);
+              if (windAngles.length > MAX_HISTORY) windAngles.shift();
+            }
+            if (key === "windSpeed") {
+              windSpeed = parseFloat(value).toFixed(1);
+              updateChart(parseFloat(value));
+              windSpeeds.push(parseFloat(value));
+              if (windSpeeds.length > 20) windSpeeds.shift();
+            }
+            if (key === "Temp1") {
+              motorTempLeftValue.textContent = `${value} °C`;
+            }
+            if (key === "Temp2") {
+              motorTempRightValue.textContent = `${value} °C`;
+            }
+            if (key === "GPS") {
+              const [lat, lon] = value.split(",");
+              gpsLatEl.textContent = `Latitude: ${lat}`;
+              gpsLonEl.textContent = `Longitude: ${lon}`;
+            }
+            updateWindDisplay();
+          }
+        } catch (e) {
+          console.error("Bad message:", event.data);
+        }
+      };
+    }
+    function applyTheme() {
+      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.className = isDark ? "dark" : "light";
+      boatImage.src = isDark ? "htbbk.png" : "htbbl.png";
+    }
+    function toggleTheme() {
+      if (document.documentElement.classList.contains("dark")) {
+        document.documentElement.className = "light";
+        boatImage.src = "htbbl.png";
+      } else {
+        document.documentElement.className = "dark";
+        boatImage.src = "htbbk.png";
+      }
+    }
+    applyTheme();
+    connectWebSocket();
+  </script>
+</body>
+</html>

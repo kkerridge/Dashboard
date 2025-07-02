@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>The Bat Cave</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            transition: background 0.3s, color 0.3s;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        :root {
+            --bg: #111;
+            --fg: #fff;
+            --card: #222;
+            --accent: #4363d8;
+            --io-on-bg: #3cb44b;
+            --io-off-bg: #e6194b;
+            --io-on-shadow: 0 4px 6px rgba(60, 180, 75, 0.3);
+            --io-off-shadow: 0 4px 6px rgba(230, 25, 75, 0.3);
+            --nav-bg: #333;
+            --nav-button-hover: #555;
+            --nav-button-active: #4363d8;
+        }
+        body.light {
+            --bg: #f0f0f0;
+            --fg: #000;
+            --card: #fff;
+            --accent: #1a56e9;
+            --io-on-bg: #4CAF50;
+            --io-off-bg: #F44336;
+            --io-on-shadow: 0 4px 6px rgba(76, 175, 80, 0.3);
+            --io-off-shadow: 0 4px 6px rgba(244, 67, 54, 0.3);
+            --nav-bg: #ccc;
+            --nav-button-hover: #aaa;
+            --nav-button-active: #1a56e9;
+        }
+        h1 {
+            margin: 10px 20px;
+            text-align: center;
+            color: var(--fg);
+        }
+        #controls, #io-controls-section .io-buttons-container {
+            padding: 10px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+        }
+        button:hover {
+            background: var(--accent);
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #main-nav {
+            display: flex;
+            justify-content: center;
+            background: var(--nav-bg);
+            padding: 10px;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        #main-nav button {
+            background: transparent;
+            color: var(--fg);
+            border-bottom: 3px solid transparent;
+            border-radius: 0;
+            padding: 10px 25px;
+            box-shadow: none;
+            transition: background 0.3s, border-bottom 0.3s;
+        }
+        #main-nav button:hover {
+            background: var(--nav-button-hover);
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        #main-nav button.active {
+            border-bottom: 3px solid var(--nav-button-active);
+            background: var(--nav-button-active);
+            color: white;
+        }
+        .io-button {
+            background: var(--io-off-bg);
+            box-shadow: var(--io-off-shadow);
+        }
+        .io-button.on {
+            background: var(--io-on-bg);
+            box-shadow: var(--io-on-shadow);
+        }
+        .io-button:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+        .device {
+            background: var(--card);
+            padding: 15px;
+            margin: 10px;
+            border-radius: 12px;
+            flex: 1 1 220px;
+            min-width: 200px;
+            max-width: 300px;
+            transition: opacity 0.5s ease-in-out, transform 0.2s ease, box-shadow 0.2s ease;
+            text-align: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .device:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        }
+        .device.fadeout {
+            opacity: 0.5;
+        }
+        .device-label {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: var(--fg);
+        }
+        .value {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 5px 0;
+            color: var(--fg);
+        }
+        .unit {
+            font-size: 16px;
+            color: #999;
+        }
+        .minmax {
+            font-size: 14px;
+            color: #777;
+            margin-top: 5px;
+        }
+        .alert {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin: 10px auto;
+            border: 2px solid var(--card);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+        }
+        .device select {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #555;
+            background: #333;
+            color: white;
+            cursor: pointer;
+            width: 80%;
+            text-align: center;
+        }
+        body.light .device select {
+            border: 1px solid #ccc;
+            background: #eee;
+            color: #333;
+        }
+        #deviceContainer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 10px;
+            gap: 20px;
+        }
+        #log {
+            margin: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #000;
+            color: #0f0;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: inset 0 0 8px rgba(0, 255, 0, 0.3);
+        }
+        #chartModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+        #chartModal canvas {
+            background: var(--card);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+        .gauge-canvas {
+            width: 120px;
+            height: 120px;
+            margin: 10px auto;
+            display: none;
+        }
+        .gauge-text {
+            display: none;
+        }
+        #io-controls-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            gap: 20px;
+        }
+        #io-controls-page h2 {
+            color: var(--fg);
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .motor-controls-box {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .motor-pair-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+        }
+        .motor-control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            background: var(--card);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex: 1;
+            min-width: 180px;
+        }
+        .motor-temp-display {
+            text-align: center;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .motor-temp-digital {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: var(--fg);
+            display: block;
+            margin-bottom: 5px;
+        }
+        .motor-temp-gauge {
+            border: 1px solid #555;
+            border-radius: 5px;
+            background-color: #333;
+            width: 100px;
+            height: 30px;
+            max-width: 100%;
+        }
+        body.light .motor-temp-gauge {
+            border: 1px solid #ccc;
+            background-color: #eee;
+        }
+        #motorStatusMessage {
+            color: #ffcc00;
+            font-weight: bold;
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ffcc00;
+            border-radius: 8px;
+            background-color: rgba(255, 204, 0, 0.1);
+            text-align: center;
+            display: none;
+        }
+        #pinModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(8px);
+        }
+        .pin-modal-content {
+            background: var(--card);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+            text-align: center;
+            width: 90%;
+            max-width: 350px;
+            transform: scale(0.95);
+            animation: fadeInScale 0.3s ease-out forwards;
+        }
+        @keyframes fadeInScale {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .pin-modal-content h3 {
+            color: var(--fg);
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .pin-modal-content input[type="password"] {
+            width: calc(100% - 20px);
+            padding: 12px 10px;
+            margin-bottom: 15px;
+            border: 2px solid var(--accent);
+            border-radius: 8px;
+            background: #333;
+            color: white;
+            font-size: 1.2em;
+            text-align: center;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        body.light .pin-modal-content input[type="password"] {
+            background: #eee;
+            color: #000;
+            border: 2px solid var(--accent);
+        }
+        .pin-modal-content button {
+            width: 100%;
+            padding: 12px 25px;
+            background: var(--accent);
+            color: white;
+            border-radius: 8px;
+            font-size: 1.2em;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        #pinMessage {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #e6194b;
+            min-height: 1.5em;
+        }
+        #map-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            flex-grow: 1;
+        }
+        #map-page h2 {
+            color: var(--fg);
+            margin-bottom: 15px;
+        }
+        #map {
+            height: 60vh;
+            width: 90%;
+            max-width: 800px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            background: var(--card);
+            margin-bottom: 15px;
+        }
+        #current-coords {
+            color: var(--fg);
+            font-size: 1.1em;
+            margin-top: 10px;
+            padding: 8px 15px;
+            background: var(--card);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            button {
+                width: 100%;
+                margin: 5px 0;
+            }
+            .device {
+                flex: 1 1 100%;
+                margin: 10px auto;
+                max-width: 90%;
+            }
+            #main-nav {
+                flex-direction: column;
+                gap: 5px;
+            }
+            #main-nav button {
+                width: 100%;
+            }
+            .motor-pair-container {
+                flex-direction: column;
+            }
+            #map {
+                height: 50vh;
+                width: 100%;
+            }
+            .pin-modal-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>The Bat Cave</h1>
+    <nav id="main-nav">
+        <button id="nav-dashboard-btn" class="active">Dashboard</button>
+        <button id="nav-io-controls-btn">Batt Control</button>
+        <button id="nav-map-btn">Map</button>
+        <button id="nav-helm-btn" onclick="window.open('https://boatlifesystems.co.uk/helm.html','_blank')">🧭 Helm Dashboard</button>
+    </nav>
+    <div id="dashboard-page">
+        <div id="controls">
+            <button onclick="window.resetAll()">🔁 Reset All</button>
+            <button onclick="window.exportCSV()">📁 Export CSV</button>
+            <button onclick="window.toggleTheme()">🌓 Theme</button>
+            <button id="silenceBtn" onclick="window.toggleSilence()">🔕 Silence Alarms</button>
+        </div>
+        <div id="deviceContainer"></div>
+        <div id="log"></div>
+    </div>
+    <div id="io-controls-page" style="display:none;">
+        <h2>Batt Control</h2>
+        <div class="motor-controls-box">
+            <div class="io-card-label">Motor Controls</div>
+            <div id="motorStatusMessage"></div>
+            <div class="motor-pair-container">
+                <div class="motor-control-group">
+                    <div class="motor-temp-display">
+                        <span class="motor-temp-digital" id="leftMotorTempDigital">N/A°C</span>
+                        <canvas class="motor-temp-gauge" id="leftMotorTempGauge" width="100" height="30"></canvas>
+                    </div>
+                    <button class="io-button" data-gpio="26" data-state="off">Left Motor: OFF</button>
+                </div>
+                <div class="motor-control-group">
+                    <div class="motor-temp-display">
+                        <span class="motor-temp-digital" id="rightMotorTempDigital">N/A°C</span>
+                        <canvas class="motor-temp-gauge" id="rightMotorTempGauge" width="100" height="30"></canvas>
+                    </div>
+                    <button class="io-button" data-gpio="27" data-state="off">Right Motor: OFF</button>
+                </div>
+            </div>
+            <button id="exitBattControlBtn" style="background-color: #800000; margin-top: 20px;">Exit Batt Control</button>
+        </div>
+    </div>
+    <div id="map-page" style="display:none;">
+        <h2>Bat-Map Tracking</h2>
+        <div id="map"></div>
+        <div id="current-coords">Current Location: N/A</div>
+    </div>
+    <audio id="alertSound" src="batman.mp3" preload="auto"></audio>
+    <audio id="battControlEntrySound" src="batman_original.mp3" preload="auto"></audio>
+    <audio id="batcaveEntrySound" src="batcave.mp3" preload="auto"></audio>
+    <div id="chartModal" style="display:none;" onclick="this.style.display='none'">
+        <canvas id="chartCanvas" width="400" height="300"></canvas>
+    </div>
+    <div id="pinModal" style="display:none;">
+        <div class="pin-modal-content">
+            <h3>Enter Batt Control PIN</h3>
+            <input type="password" id="pinInput" placeholder="****" maxlength="4" />
+            <button id="pinSubmitBtn">Access Batt Control</button>
+            <div id="pinMessage"></div>
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+    <script type="module" src="batcave.js"></script>
+</body>
+</html>
